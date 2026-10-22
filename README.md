@@ -22,3 +22,8 @@ A free, local-first journaling prompt app. No accounts, analytics, or cloud data
 ## Updating
 
 Changes to the app code can be uploaded to the repository. To make a new version of the offline cache, increment `CACHE` in `sw.js`. Never commit exported backup files to the repository.
+
+## New in this update
+- Past entries show the original saved date and time.
+- Export all saved sessions to a Word (.docx) document from Past entries. The Word export is not encrypted; store it privately.
+- Existing local entries are preserved because the storage key is unchanged.
