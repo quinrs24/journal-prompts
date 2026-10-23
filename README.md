@@ -27,3 +27,18 @@ Changes to the app code can be uploaded to the repository. To make a new version
 - Past entries show the original saved date and time.
 - Export all saved sessions to a Word (.docx) document from Past entries. The Word export is not encrypted; store it privately.
 - Existing local entries are preserved because the storage key is unchanged.
+
+
+## Roomier writing area
+The session response fields are now document-sized (approximately 440px tall on phones and 480px on larger screens), and can still be resized manually on desktop. Existing Google syncing, saved drafts, and journal upload behavior are unchanged.
+
+
+## Writing mode update
+- One prompt at a time in a distraction-free, borderless writing page.
+- Writing text 14px; prompt heading 17px.
+- Tap Done to return to My session; tap + Add prompt to go back to the generator.
+- Draft answers continue to use the existing localStorage data model and save on every input.
+- Save session still appends all prompts and responses to the configured Google Doc.
+- Service worker cache version bumped so installed apps receive the updated assets.
+
+**Before updating:** keep a copy of the current website files. Test a sample draft and Google Doc save before relying on it for important writing.
