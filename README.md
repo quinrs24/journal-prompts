@@ -42,3 +42,6 @@ The session response fields are now document-sized (approximately 440px tall on 
 - Service worker cache version bumped so installed apps receive the updated assets.
 
 **Before updating:** keep a copy of the current website files. Test a sample draft and Google Doc save before relying on it for important writing.
+
+### Delete a prompt while shuffling
+The **Delete this prompt** button removes the currently displayed question from the master Google Sheet after confirmation. Google must be connected. Existing session drafts and previously saved writing are unaffected.
