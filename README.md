@@ -45,3 +45,6 @@ The session response fields are now document-sized (approximately 440px tall on 
 
 ### Delete a prompt while shuffling
 The **Delete this prompt** button removes the currently displayed question from the master Google Sheet after confirmation. Google must be connected. Existing session drafts and previously saved writing are unaffected.
+
+## Google Doc formatting update
+New saved sessions now bold the date/time and each prompt, while leaving responses regular weight. Existing entries are unchanged. The app reads the Doc end position and applies formatting in the same Google Docs batch update as the text insertion.

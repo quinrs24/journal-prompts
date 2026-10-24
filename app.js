@@ -89,7 +89,44 @@ $('googleDisconnect').addEventListener('click',()=>{if(accessToken&&window.googl
 // Session uploads use a local receipt to prevent accidental duplicate uploads on the same device.
 const receiptKey='journal-prompts-google-doc-receipts-v1';
 function receipts(){try{return JSON.parse(localStorage.getItem(receiptKey)||'{}')}catch{return {}}}
-async function appendSession(session){if(!accessToken)throw Error('Connect Google first.');const id=session.id||session.created;if(receipts()[id])return;const date=new Date(session.created);const title=Number.isNaN(date.getTime())?'Saved session':date.toLocaleString(undefined,{year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'});let content='\n\n'+title+'\n';for(const e of session.entries||[])content+='\n'+(e.prompt||'Untitled prompt')+'\n'+(e.answer||'(No written response)')+'\n';await googleFetch('https://docs.googleapis.com/v1/documents/'+encodeURIComponent(DOC_ID)+':batchUpdate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requests:[{insertText:{endOfSegmentLocation:{},text:content}}]})});const r=receipts();r[id]=new Date().toISOString();localStorage.setItem(receiptKey,JSON.stringify(r));}
+async function appendSession(session){
+  if(!accessToken)throw Error('Connect Google first.');
+  const id=session.id||session.created;
+  if(receipts()[id])return;
+  const date=new Date(session.created);
+  const title=Number.isNaN(date.getTime())?'Saved session':date.toLocaleString(undefined,{year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'});
+  // Google Docs uses UTF-16 code-unit indices, just like JavaScript string.length.
+  let content='';
+  const boldSpans=[];
+  function add(text,bold=false){
+    const start=content.length;
+    content+=text;
+    if(bold&&text.length)boldSpans.push({start,end:content.length});
+  }
+  add('\n\n');
+  add(title,true);
+  add('\n');
+  for(const e of session.entries||[]){
+    add('\n');
+    add(e.prompt||'Untitled prompt',true);
+    add('\n');
+    add(e.answer||'(No written response)');
+    add('\n');
+  }
+  const url='https://docs.googleapis.com/v1/documents/'+encodeURIComponent(DOC_ID);
+  const doc=await googleFetch(url+'?fields=body(content(endIndex))');
+  const elements=doc.body?.content||[];
+  if(!elements.length)throw Error('Could not locate the end of the Google Doc.');
+  const insertionIndex=elements[elements.length-1].endIndex-1;
+  const requests=[
+    {insertText:{endOfSegmentLocation:{},text:content}},
+    // Reset inherited formatting so responses remain regular even if the Doc ends in bold.
+    {updateTextStyle:{range:{startIndex:insertionIndex,endIndex:insertionIndex+content.length},textStyle:{bold:false},fields:'bold'}},
+    ...boldSpans.map(span=>({updateTextStyle:{range:{startIndex:insertionIndex+span.start,endIndex:insertionIndex+span.end},textStyle:{bold:true},fields:'bold'}}))
+  ];
+  await googleFetch(url+':batchUpdate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requests})});
+  const r=receipts();r[id]=new Date().toISOString();localStorage.setItem(receiptKey,JSON.stringify(r));
+}
 $('deleteAll').addEventListener('click',()=>{if(!confirm('Permanently delete all prompts, current writing, and past entries from this device? Make a backup first.'))return;if(!confirm('Are you sure? This cannot be undone without a backup.'))return;data=fresh();save();promptView();renderSession();tab('session');msg('Local journal data deleted. Google Sheet and Doc were not changed.')});
 if(!storageOK)msg('Saved journal data could not be loaded. Avoid writing until browser storage is available.');else save();promptView();renderSession();
 if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
