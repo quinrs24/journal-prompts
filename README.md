@@ -48,3 +48,13 @@ The **Delete this prompt** button removes the currently displayed question from 
 
 ## Google Doc formatting update
 New saved sessions now bold the date/time and each prompt, while leaving responses regular weight. Existing entries are unchanged. The app reads the Doc end position and applies formatting in the same Google Docs batch update as the text insertion.
+
+
+## October 2026 update: edit, shuffle history, automatic dark mode
+
+- **Edit this prompt**: When connected to Google, revise the current question in a browser dialog. The app updates the matching row in the authoritative Google Sheet, keeping its place in the list. Existing journal entries are not rewritten.
+- **Back / Forward**: Browse the prompts you saw during this open app session. Shuffling after going back creates a new path. History is temporary and is not shared across devices.
+- **Automatic dark mode**: Follows the device/browser `prefers-color-scheme` setting, with no toggle and no tracking.
+- **Unchanged**: Writing Mode, draft autosave, Google Doc formatting and saving, prompt deletion, and Google Sheet syncing.
+
+Google Sheets editing requires an active Google sign-in. Try editing a disposable prompt first. After deployment, refresh or reopen the installed app if you see an older cached version.
