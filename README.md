@@ -1,16 +1,21 @@
-# Journal Prompts — answer history + ornament
+# Journal Prompts — Favorites update
 
-Upload all six files to the root of your GitHub Pages repository, replacing the existing files. Do not upload the ZIP itself.
+Upload all six files from this ZIP to the ROOT of your existing GitHub Pages repository, replacing files with the same names. Do not upload the ZIP itself.
 
 ## New
-- After writing and tapping Done, **View past answers** appears beside that prompt in My session. It reveals previous *saved* responses to the same question, newest first. It does not display previous responses during writing.
-- Future saved sessions are indexed in a hidden **Answer History** tab inside your **existing private Google prompts spreadsheet**. The first successful save creates the tab automatically. No new public file, account permissions, or separate spreadsheet ID is required.
-- Your existing Google Doc remains the canonical journal. It gets a centered `⋆˚꩜｡⋆` ornament between newly saved sessions, with bold date and prompt headings preserved.
-- If a Google Doc save succeeds but indexing fails, the pending index is kept on this device. Open Settings → **Sync answer history** to retry. The app checks entry IDs before indexing to reduce duplicates.
+- Tap ☆ beside a prompt to add/remove it from **Favorites**.
+- Open the **Favorites** tab to browse a shuffled list. Each time the tab opens it shuffles; tap **Shuffle** to rearrange it again.
+- Tap a favorite to start writing with that prompt.
+- Favorites sync across devices in column B of the existing private prompts Google Sheet (no new Google files needed).
+- **View past answers** only appears on a session card when the private answer index has one or more previously saved answers to that question. History starts with future saves only.
 
-## Limitations and safety
-- **Future saves only.** Existing Google Doc entries are not imported.
-- The history lookup matches the exact prompt wording (ignoring whitespace/case). Editing a question later may separate older answers from newer ones; stable prompt IDs are not yet implemented.
-- Your journal responses are duplicated in the private Google Sheet's hidden history tab. Hidden is not a security control: keep the spreadsheet Restricted, just like your Google Doc.
-- Do not clear browser data if Settings shows pending index saves.
-- Google Docs and Sheets operations were syntax checked but not live-tested against your account. Save a short disposable test session, verify the Google Doc ornament and the hidden Answer History sheet, then test View past answers on a repeated question.
+## Unchanged
+- Plain-text writing mode; no rich text changes.
+- Google Doc session saves, divider ⋆˚꩜｡⋆, dark mode, prompt management, and private answer history.
+
+## Notes
+- Sign in to Google before starring a prompt so the change is synced.
+- The app uses column B of your prompts worksheet for Favorites; keep other data out of that column.
+- The app matches Favorites and past answers to the current question text. Editing a prompt carries its Favorite status forward; old answer-history entries still use the wording at the time they were saved.
+- Test a Favorite on one device, sync on another, and check a previously answered prompt before relying on the new features.
+- The Google APIs cannot be tested with your account from this environment; only static checks were run.
