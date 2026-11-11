@@ -1,21 +1,13 @@
-# Journal Prompts — Favorites update
+# Journal Prompts — On This Day update
 
-Upload all six files from this ZIP to the ROOT of your existing GitHub Pages repository, replacing files with the same names. Do not upload the ZIP itself.
+Upload the six files in this ZIP to the root of your existing GitHub Pages repository, replacing the matching files. Do not upload the ZIP itself.
 
-## New
-- Tap ☆ beside a prompt to add/remove it from **Favorites**.
-- Open the **Favorites** tab to browse a shuffled list. Each time the tab opens it shuffles; tap **Shuffle** to rearrange it again.
-- Tap a favorite to start writing with that prompt.
-- Favorites sync across devices in column B of the existing private prompts Google Sheet (no new Google files needed).
-- **View past answers** only appears on a session card when the private answer index has one or more previously saved answers to that question. History starts with future saves only.
+Changes:
+- Main prompt Shuffle now uses a randomized deck: no repeats until all other prompts have appeared. Back still uses its existing trail.
+- New On This Day tab displays entries indexed exactly 7 days, 6 calendar months, or 1 calendar year ago. It reads the existing private Answer History worksheet and never edits journal content. Older entries that were not indexed cannot appear.
+- Mobile writing screen uses an internally scrollable textarea instead of growing it to the full content height.
+- Lightweight plain-text list shortcuts: `- ` or `* ` at the beginning of a line becomes `• `; `1. ` starts a numbered list, and Enter continues the list. These are text characters, not rich-text formatting.
+- Draft session cards with past answers have a lilac highlight and more visible View past answers button.
+- Remove prompt on a draft session card is now Remove entry.
 
-## Unchanged
-- Plain-text writing mode; no rich text changes.
-- Google Doc session saves, divider ⋆˚꩜｡⋆, dark mode, prompt management, and private answer history.
-
-## Notes
-- Sign in to Google before starring a prompt so the change is synced.
-- The app uses column B of your prompts worksheet for Favorites; keep other data out of that column.
-- The app matches Favorites and past answers to the current question text. Editing a prompt carries its Favorite status forward; old answer-history entries still use the wording at the time they were saved.
-- Test a Favorite on one device, sync on another, and check a previously answered prompt before relying on the new features.
-- The Google APIs cannot be tested with your account from this environment; only static checks were run.
+This update retains your Google Doc, private Sheet, Favorites, and existing draft storage. Test on phone and desktop before relying on it for longer entries. Google access cannot be tested without your sign-in.
