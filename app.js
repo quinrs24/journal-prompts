@@ -2,10 +2,26 @@
 (()=>{
 const KEY='journal-prompts-v1';
 const starter=["What has been taking up the most space in my mind lately?", "When have I felt most like myself recently?", "What small moments have felt meaningful lately?", "What am I learning about myself in this season of life?", "What feelings have I been trying to make sense of?", "What is something unexpected that happened recently?", "Who did I think about today, and what made them come to mind?", "What would I tell my past self about today?", "What am I grateful for?", "What’s a piece of music, art, writing, or other piece of media I've been thinking about?", "What did past me work hard to make possible for present me?", "What do I want my life to look like in 90 days?", "How do you think people see you?", "When are you most judgmental?", "What values are guiding your life right now?", "Are there any core values you hold that you are not currently living in alignment with?", "What do you wish was different?"];
-const fresh=()=>({prompts:[...starter],current:0,session:[],history:[],favorites:[]});
+const fresh=()=>({prompts:[...starter],current:0,session:[],history:[],favorites:[],skipCounts:[]});
 let data;let storageOK=true;
 try{const raw=localStorage.getItem(KEY);data=raw?JSON.parse(raw):fresh();if(!Array.isArray(data.prompts)||!Array.isArray(data.session)||!Array.isArray(data.history))throw Error('Invalid saved data');}catch(e){data=fresh();storageOK=false;}
 if(!Array.isArray(data.favorites))data.favorites=[];
+if(!Array.isArray(data.skipCounts))data.skipCounts=[];
+data.skipCounts=data.skipCounts.filter(x=>x&&typeof x.prompt==='string'&&Number.isInteger(x.count)&&x.count>0);
+// A skip means leaving a newly shown shuffle prompt without keeping it.
+// Back navigation never counts; counters are local to this device.
+let shuffleEncounter=null;
+function skipCount(p){return data.skipCounts.find(x=>normalizePrompt(x.prompt)===normalizePrompt(p))?.count||0}
+function resetSkips(p){data.skipCounts=data.skipCounts.filter(x=>normalizePrompt(x.prompt)!==normalizePrompt(p));if(shuffleEncounter&&normalizePrompt(shuffleEncounter.prompt)===normalizePrompt(p))shuffleEncounter.kept=true;}
+function recordSkip(){
+ const shown=shuffleEncounter;
+ if(!shown||shown.kept||data.session.some(e=>normalizePrompt(e.prompt)===normalizePrompt(shown.prompt)))return;
+ const found=data.skipCounts.find(x=>normalizePrompt(x.prompt)===normalizePrompt(shown.prompt));
+ if(found)found.count++;else data.skipCounts.push({prompt:shown.prompt,count:1});
+ shuffleEncounter=null;
+}
+function renderSkipCue(){const p=data.prompts[data.current],n=p?skipCount(p):0;const cue=$('skipCue');cue.hidden=n<5;cue.textContent=n>=5?'! Often skipped · '+n+' times. You can edit or delete it below.':'';$('promptCard').classList.toggle('often-skipped',n>=5);}
+
 const $=id=>document.getElementById(id);const msg=s=>{$('status').textContent=s};
 function save(){try{localStorage.setItem(KEY,JSON.stringify(data));storageOK=true;return true}catch(e){storageOK=false;msg('Could not save on this device. Check browser storage settings.');return false}}
 let shuffleTrail=[];let trailPosition=-1;
@@ -15,14 +31,30 @@ function resetDeck(){shuffleDeck=[...data.prompts];for(let i=shuffleDeck.length-
 function nextDeckPrompt(){if(!shuffleDeck.length)resetDeck();return shuffleDeck.pop();}
 function resetShuffleTrail(){shuffleTrail=data.prompts.length?[data.prompts[Math.min(data.current,data.prompts.length-1)]]:[];trailPosition=shuffleTrail.length-1;}
 function recordShuffle(prompt){if(trailPosition<shuffleTrail.length-1)shuffleTrail=shuffleTrail.slice(0,trailPosition+1);shuffleTrail.push(prompt);if(shuffleTrail.length>100)shuffleTrail.shift();trailPosition=shuffleTrail.length-1;}
-function showTrailPosition(){const p=shuffleTrail[trailPosition];const i=data.prompts.findIndex(x=>x===p);if(i<0){resetShuffleTrail();return;}data.current=i;save();promptView();msg('');}
-function promptView(){const count=data.prompts.length;$('promptCount').textContent=count+' prompt'+(count===1?'':'s');$('currentPrompt').textContent=count?data.prompts[Math.min(data.current,count-1)]:'Add a prompt to get started.';$('shuffle').disabled=count<2;$('keep').disabled=count===0;$('deleteCurrentPrompt').disabled=count===0||changeBusy||!accessToken;$('editCurrentPrompt').disabled=count===0||changeBusy||!accessToken;$('promptBack').disabled=trailPosition<=0;const current=data.prompts[data.current];const isFav=!!current&&data.favorites.includes(current);$('favoriteCurrent').textContent=isFav?'★':'☆';$('favoriteCurrent').setAttribute('aria-pressed',String(isFav));$('favoriteCurrent').setAttribute('aria-label',isFav?'Remove prompt from Favorites':'Add prompt to Favorites');$('favoriteCurrent').disabled=!current||!accessToken||changeBusy;}
+function showTrailPosition(){const p=shuffleTrail[trailPosition];const i=data.prompts.findIndex(x=>x===p);if(i<0){resetShuffleTrail();return;}data.current=i;shuffleEncounter=null;save();promptView();msg('');}
+function promptView(){const count=data.prompts.length;$('promptCount').textContent=count+' prompt'+(count===1?'':'s');$('currentPrompt').textContent=count?data.prompts[Math.min(data.current,count-1)]:'Add a prompt to get started.';$('shuffle').disabled=count<2;$('keep').disabled=count===0;$('deleteCurrentPrompt').disabled=count===0||changeBusy||!accessToken;$('editCurrentPrompt').disabled=count===0||changeBusy||!accessToken;$('promptBack').disabled=trailPosition<=0;const current=data.prompts[data.current];const isFav=!!current&&data.favorites.includes(current);$('favoriteCurrent').textContent=isFav?'★':'☆';$('favoriteCurrent').setAttribute('aria-pressed',String(isFav));$('favoriteCurrent').setAttribute('aria-label',isFav?'Remove prompt from Favorites':'Add prompt to Favorites');$('favoriteCurrent').disabled=!current||!accessToken||changeBusy;renderSkipCue();}
 function tab(name){for(const el of document.querySelectorAll('[data-tab]'))el.setAttribute('aria-selected',String(el.dataset.tab===name));for(const key of ['session','favorites','memories','library','settings'])$(key).classList.toggle('hidden',key!==name);if(name==='settings')renderHistory();if(name==='memories')renderMemories();if(name==='library')renderLibrary();if(name==='favorites'){shuffleFavoritesOrder();renderFavorites();}}
 function entryUI(entry,onRemove){const box=document.createElement('div');box.className='entry';const heading=document.createElement('h3');heading.textContent=entry.prompt;box.append(heading);const area=document.createElement('textarea');area.value=entry.answer||'';area.placeholder='Write here, or use your paper journal…';area.setAttribute('aria-label','Response to '+entry.prompt);area.addEventListener('input',()=>{entry.answer=area.value;save()});box.append(area);if(onRemove){const btn=document.createElement('button');btn.className='subtle';btn.textContent='Remove entry';btn.addEventListener('click',onRemove);box.append(btn)}return box;}
-let activeWritingIndex=null;let writingPreviousFocus=null;
-function sizeWritingArea(){const area=$('writingText');area.style.height='';}
-function openWriting(index){const entry=data.session[index];if(!entry)return;activeWritingIndex=index;writingPreviousFocus=document.activeElement;$('writingPrompt').textContent=entry.prompt;$('writingText').value=entry.answer||'';$('writingMode').classList.remove('hidden');document.body.classList.add('writing-open');sizeWritingArea();$('writingText').focus({preventScroll:true});}
-function closeWriting(){if(activeWritingIndex===null)return;const entry=data.session[activeWritingIndex];if(entry){entry.answer=$('writingText').value;save()}activeWritingIndex=null;$('writingMode').classList.add('hidden');document.body.classList.remove('writing-open');renderSession();if(writingPreviousFocus&&writingPreviousFocus.isConnected)writingPreviousFocus.focus({preventScroll:true});}
+let activeWritingIndex=null;let writingPreviousFocus=null;let writingScrollY=0;
+// Measure off-screen so sizing never briefly collapses the focused editor or
+// clamps the page's scroll position while typing near the end of a long entry.
+const writingMeasure=document.createElement('textarea');
+writingMeasure.tabIndex=-1;writingMeasure.setAttribute('aria-hidden','true');writingMeasure.readOnly=true;
+writingMeasure.style.cssText='position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;height:0;min-height:0;max-height:none;overflow:hidden;resize:none;';
+document.body.append(writingMeasure);
+function sizeWritingArea(){
+ if(activeWritingIndex===null)return;
+ const area=$('writingText'),css=getComputedStyle(area);
+ for(const key of ['width','boxSizing','fontFamily','fontSize','fontWeight','fontStyle','lineHeight','letterSpacing','paddingTop','paddingBottom','paddingLeft','paddingRight','borderTopWidth','borderBottomWidth','borderLeftWidth','borderRightWidth','wordBreak','overflowWrap','whiteSpace','tabSize'])writingMeasure.style[key]=css[key];
+ writingMeasure.value=area.value+'\n';
+ const min=parseFloat(css.minHeight)||0;
+ area.style.height=Math.ceil(Math.max(min,writingMeasure.scrollHeight+parseFloat(css.borderTopWidth)+parseFloat(css.borderBottomWidth)))+'px';
+}
+window.addEventListener('resize',sizeWritingArea);
+if(document.fonts)document.fonts.ready.then(sizeWritingArea);
+
+function openWriting(index){const entry=data.session[index];if(!entry)return;activeWritingIndex=index;writingScrollY=window.scrollY;writingPreviousFocus=document.activeElement;resetSkips(entry.prompt);save();promptView();$('writingPrompt').textContent=entry.prompt;$('writingText').value=entry.answer||'';$('writingMode').classList.remove('hidden');document.body.classList.add('writing-open');sizeWritingArea();window.scrollTo(0,0);$('writingText').focus({preventScroll:true});}
+function closeWriting(){if(activeWritingIndex===null)return;const entry=data.session[activeWritingIndex];if(entry){entry.answer=$('writingText').value;save()}$('writingText').blur();activeWritingIndex=null;$('writingMode').classList.add('hidden');document.body.classList.remove('writing-open');renderSession();if(writingPreviousFocus&&writingPreviousFocus.isConnected)writingPreviousFocus.focus({preventScroll:true});window.scrollTo(0,writingScrollY);}
 $('writingText').addEventListener('input',()=>{if(activeWritingIndex===null)return;const entry=data.session[activeWritingIndex];if(entry){entry.answer=$('writingText').value;save()}sizeWritingArea()});
 // Plain-text list shortcuts; no rich-text editor or Google Doc format changes.
 const writingArea=$('writingText');
@@ -51,13 +83,13 @@ function renderSession(){const box=$('sessionEntries');box.replaceChildren();$('
 function renderHistory(){const box=$('historyEntries');box.replaceChildren();$('pendingGroup').classList.toggle('hidden',!data.history.length);if(!data.history.length)return;data.history.forEach((s,i)=>{const card=document.createElement('div');card.className='entry';const head=document.createElement('div');head.className='history-head';const title=document.createElement('strong');const date=new Date(s.created);title.textContent=(Number.isNaN(date.getTime())?'Saved session':date.toLocaleString(undefined,{year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'}))+' · '+s.entries.length+' prompt'+(s.entries.length===1?'':'s');const toggle=document.createElement('button');toggle.textContent='View / edit';toggle.setAttribute('aria-expanded','false');const body=document.createElement('div');body.className='history-items hidden';toggle.addEventListener('click',()=>{const open=body.classList.toggle('hidden')===false;toggle.textContent=open?'Close':'View / edit';toggle.setAttribute('aria-expanded',String(open))});s.entries.forEach(e=>body.append(entryUI(e,null)));const del=document.createElement('button');del.className='subtle';del.textContent='Delete saved session';del.addEventListener('click',()=>{if(confirm('Delete this saved session and its writing?')){data.history.splice(i,1);save();renderHistory()}});body.append(del);const upload=document.createElement('button');upload.textContent='Retry Google save';upload.addEventListener('click',async()=>{upload.disabled=true;try{await appendSession(s);queueAnswerHistory(s);await flushAnswerHistory();data.history=data.history.filter(x=>x.id!==s.id);save();renderHistory();msg('Saved to Google Doc.')}catch(e){msg('Save not confirmed: '+e.message+'. Check the Doc before retrying.')}finally{upload.disabled=false}});body.append(upload);head.append(title,toggle);card.append(head,body);box.append(card)});}
 let favoriteOrder=[];
 function shuffleFavoritesOrder(){favoriteOrder=data.favorites.filter(p=>data.prompts.includes(p));for(let i=favoriteOrder.length-1;i>0;i--){const k=Math.floor(Math.random()*(i+1));[favoriteOrder[i],favoriteOrder[k]]=[favoriteOrder[k],favoriteOrder[i]];}}
-function renderFavorites(){const box=$('favoritesEntries');box.replaceChildren();const items=favoriteOrder.filter(p=>data.favorites.includes(p)&&data.prompts.includes(p));$('favoritesEmpty').hidden=items.length>0;$('shuffleFavorites').disabled=items.length<2;for(const promptText of items){const row=document.createElement('div');row.className='entry favorite-item';const open=document.createElement('button');open.className='favorite-text';open.textContent=promptText;open.setAttribute('aria-label','Write about: '+promptText);open.addEventListener('click',()=>{const idx=data.prompts.indexOf(promptText);if(idx<0)return;data.current=idx;recordShuffle(promptText);save();promptView();data.session.push({prompt:promptText,answer:''});save();renderSession();tab('session');openWriting(data.session.length-1)});const star=document.createElement('button');star.className='favorite-star';star.textContent='★';star.title='Remove from Favorites';star.setAttribute('aria-label','Remove from Favorites: '+promptText);star.addEventListener('click',()=>toggleFavorite(promptText));row.append(open,star);box.append(row)}}
+function renderFavorites(){const box=$('favoritesEntries');box.replaceChildren();const items=favoriteOrder.filter(p=>data.favorites.includes(p)&&data.prompts.includes(p));$('favoritesEmpty').hidden=items.length>0;$('shuffleFavorites').disabled=items.length<2;for(const promptText of items){const row=document.createElement('div');row.className='entry favorite-item';const open=document.createElement('button');open.className='favorite-text';open.textContent=promptText;open.setAttribute('aria-label','Write about: '+promptText);open.addEventListener('click',()=>{startNewAnswer(promptText)});const star=document.createElement('button');star.className='favorite-star';star.textContent='★';star.title='Remove from Favorites';star.setAttribute('aria-label','Remove from Favorites: '+promptText);star.addEventListener('click',()=>toggleFavorite(promptText));row.append(open,star);box.append(row)}}
 $('shuffleFavorites').addEventListener('click',()=>{shuffleFavoritesOrder();renderFavorites()});
 $('favoriteCurrent').addEventListener('click',()=>{const p=data.prompts[data.current];if(p)toggleFavorite(p)});
 async function toggleFavorite(p){if(!accessToken){msg('Connect Google to sync Favorites across devices.');tab('settings');return}if(changeBusy||googleBusy){msg('Wait for syncing to finish, then try again.');return}changeBusy=true;promptView();try{const {name,prompts,favorites}=await readSheet();const key=normalizePrompt(p);const match=prompts.find(x=>normalizePrompt(x)===key);if(!match)throw Error('This prompt is no longer in your Google Sheet. Sync prompts and try again.');const next=new Set(favorites);if(next.has(match))next.delete(match);else next.add(match);await writeFavoritesColumn(name,prompts,next);data.favorites=[...next];save();promptView();favoriteOrder=favoriteOrder.filter(x=>data.favorites.includes(x));for(const x of data.favorites)if(!favoriteOrder.includes(x))favoriteOrder.push(x);renderFavorites();renderLibrary();msg(next.has(match)?'Added to Favorites.':'Removed from Favorites.')}catch(e){msg('Could not update Favorites: '+e.message)}finally{changeBusy=false;promptView()}}
 async function writeFavoritesColumn(name,prompts,favorites){const range="'"+name.replace(/'/g,"''")+"'!B1:B"+(prompts.length+1);await googleFetch(sheetsBase+'/values/'+encodeURIComponent(range)+'?valueInputOption=RAW',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({values:[['Favorite'],...prompts.map(p=>[favorites.has(p)?'TRUE':''])]})})}
 function renderLibrary(){const box=$('libraryEntries');box.replaceChildren();data.prompts.forEach((p,i)=>{const row=document.createElement('div');row.className='entry row between';const text=document.createElement('span');text.style.flex='1 1 220px';text.textContent=p;const del=document.createElement('button');del.className='subtle';del.textContent='Delete';del.setAttribute('aria-label','Delete prompt: '+p);del.addEventListener('click',()=>{if(!accessToken){msg('Connect Google before deleting synced prompts.');return}changePrompts('delete',[p])});const star=document.createElement('button');star.className='favorite-star';const selected=data.favorites.includes(p);star.textContent=selected?'★':'☆';star.setAttribute('aria-label',(selected?'Remove from':'Add to')+' Favorites: '+p);star.setAttribute('aria-pressed',String(selected));star.addEventListener('click',()=>toggleFavorite(p));row.append(text,star,del);box.append(row)});}
-$('shuffle').addEventListener('click',()=>{if(data.prompts.length<2)return;const next=nextDeckPrompt();const i=data.prompts.indexOf(next);if(i<0){resetDeck();return;}data.current=i;recordShuffle(next);save();promptView();msg('')});
+$('shuffle').addEventListener('click',()=>{if(data.prompts.length<2)return;recordSkip();const next=nextDeckPrompt();const i=data.prompts.indexOf(next);if(i<0){resetDeck();return;}data.current=i;shuffleEncounter={prompt:next,kept:false};recordShuffle(next);save();promptView();msg('')});
 $('promptBack').addEventListener('click',()=>{if(trailPosition>0){trailPosition--;showTrailPosition();}});
 $('editCurrentPrompt').addEventListener('click',async()=>{
  if(!accessToken){msg('Connect Google before editing prompts.');tab('settings');return;}
@@ -71,7 +103,7 @@ $('editCurrentPrompt').addEventListener('click',async()=>{
  if(updated===original)return;
  if(data.prompts.some(p=>normalizePrompt(p)===normalizePrompt(updated)&&p!==original)){msg('That prompt already exists in your library.');return;}
  const ok=await changePrompts('edit',[original,updated]);
- if(ok){shuffleTrail=shuffleTrail.map(p=>p===original?updated:p);data.current=data.prompts.indexOf(updated);if(data.current<0)data.current=0;save();promptView();msg('Prompt updated in your Google Sheet. Existing journal entries stay unchanged.');}
+ if(ok){resetSkips(original);shuffleEncounter={prompt:updated,kept:true};shuffleTrail=shuffleTrail.map(p=>p===original?updated:p);data.current=data.prompts.indexOf(updated);if(data.current<0)data.current=0;save();promptView();msg('Prompt updated in your Google Sheet. Existing journal entries stay unchanged.');}
 });
 $('deleteCurrentPrompt').addEventListener('click',async()=>{
   if(!data.prompts.length)return;
@@ -85,11 +117,22 @@ $('deleteCurrentPrompt').addEventListener('click',async()=>{
     if(ok){
       if(data.prompts.length>1)data.current=Math.floor(Math.random()*data.prompts.length);
       else data.current=0;
-      resetShuffleTrail();save();promptView();msg('Prompt deleted from your Google Sheet. Here’s another one.');
+      shuffleEncounter={prompt:data.prompts[data.current],kept:false};resetShuffleTrail();save();promptView();msg('Prompt deleted from your Google Sheet. Here’s another one.');
     }
   }finally{promptView();}
 });
-$('keep').addEventListener('click',()=>{if(!data.prompts.length)return;data.session.push({prompt:data.prompts[data.current],answer:''});save();renderSession();tab('session');openWriting(data.session.length-1);msg('Prompt added to your session.')});
+function startNewAnswer(promptText){
+ // Always create a blank response, including for prompts removed from the library.
+ // Earlier answers and any other draft response are left intact.
+ $('pastAnswersOverlay').classList.add('hidden');
+ const idx=data.prompts.findIndex(p=>normalizePrompt(p)===normalizePrompt(promptText));
+ if(idx>=0){data.current=idx;recordShuffle(data.prompts[idx]);}
+ resetSkips(promptText);shuffleEncounter=null;
+ data.session.push({prompt:promptText,answer:''});save();promptView();renderSession();tab('session');
+ openWriting(data.session.length-1);msg('New response added to your session.');
+}
+function answerNowButton(promptText){const btn=document.createElement('button');btn.type='button';btn.className='answer-now';btn.textContent='Answer now';btn.setAttribute('aria-label','Answer now: '+promptText);btn.addEventListener('click',()=>startNewAnswer(promptText));return btn;}
+$('keep').addEventListener('click',()=>{if(data.prompts.length)startNewAnswer(data.prompts[data.current])});
 $('saveSession').addEventListener('click',async()=>{if(!data.session.length){msg('Add a prompt before saving.');return}if(!accessToken){msg('Connect Google before saving to your master journal. Your draft is still on this device.');tab('settings');return}const button=$('saveSession');button.disabled=true;const session={id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),created:new Date().toISOString(),entries:data.session.map(e=>({...e}))};data.history.unshift(session);save();try{await appendSession(session);queueAnswerHistory(session);const historySynced=await flushAnswerHistory();data.history=data.history.filter(x=>x.id!==session.id);data.session=[];save();renderSession();renderHistory();msg(historySynced?'Saved to your Google Doc and answer history!':'Saved to your Google Doc. Answer history is waiting to sync; retry in Settings.');}catch(e){data.session=[];save();renderSession();renderHistory();tab('settings');msg('Google save not confirmed: '+e.message+'. Your writing is saved under Unconfirmed saves in Settings. Check the Doc before retrying.')}finally{button.disabled=false}});
 $('clearSession').addEventListener('click',()=>{if(data.session.length&&!confirm('Clear this session and all its responses?'))return;data.session=[];save();renderSession();msg('Session cleared.')});
 $('promptForm').addEventListener('submit',e=>{e.preventDefault();const lines=$('newPrompts').value.split('\n').map(s=>s.trim()).filter(Boolean);if(!lines.length){msg('Enter at least one prompt.');return}if(lines.length>1000){msg('Please add at most 1,000 prompts at once.');return}if(accessToken){changePrompts('add',lines).then(ok=>{if(ok)$('newPrompts').value=''})}else{msg('Connect Google before adding prompts to the shared library.');tab('settings')}});
@@ -114,7 +157,7 @@ async function sheetName(){const r=await googleFetch(sheetsBase+'?fields=sheets(
 function sheetRange(name){return "'"+name.replace(/'/g,"''")+"'!A:A"}
 async function readSheet(){const name=await sheetName();const range="'"+name.replace(/'/g,"''")+"'!A:B";const r=await googleFetch(sheetsBase+'/values/'+encodeURIComponent(range));const rows=(r.values||[]).filter((row,i)=>!(i===0&&normalizePrompt(row[0])==='prompt'));const prompts=uniquePrompts(rows.map(row=>row[0]||''));const favorites=prompts.filter(p=>rows.some(row=>normalizePrompt(row[0])===normalizePrompt(p)&&/^(true|yes|1|★)$/i.test(String(row[1]||'').trim())));return {name,prompts,favorites} }
 async function writeSheet(name,prompts,favorites){const range="'"+name.replace(/'/g,"''")+"'!A:B";await googleFetch(sheetsBase+'/values/'+encodeURIComponent(range)+':clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const target="'"+name.replace(/'/g,"''")+"'!A1";await googleFetch(sheetsBase+'/values/'+encodeURIComponent(target)+'?valueInputOption=RAW',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({values:[['Prompt','Favorite'],...prompts.map(p=>[p,favorites.has(p)?'TRUE':''])]})})}
-function showPrompts(prompts,favorites=data.favorites){data.favorites=favorites.filter(p=>prompts.includes(p));const old=data.prompts[data.current];data.prompts=prompts;resetDeck();const idx=prompts.indexOf(old);data.current=idx>=0?idx:Math.min(data.current,Math.max(0,prompts.length-1));shuffleTrail=shuffleTrail.filter(p=>prompts.includes(p));if(!shuffleTrail.length||!shuffleTrail.includes(prompts[data.current]))resetShuffleTrail();else trailPosition=shuffleTrail.lastIndexOf(prompts[data.current]);save();promptView();renderLibrary();favoriteOrder=favoriteOrder.filter(p=>data.favorites.includes(p));for(const p of data.favorites)if(!favoriteOrder.includes(p))favoriteOrder.push(p);renderFavorites()}
+function showPrompts(prompts,favorites=data.favorites){data.favorites=favorites.filter(p=>prompts.includes(p));const old=data.prompts[data.current];data.prompts=prompts;data.skipCounts=data.skipCounts.filter(x=>prompts.some(p=>normalizePrompt(p)===normalizePrompt(x.prompt)));const idx=prompts.indexOf(old);data.current=idx>=0?idx:Math.min(data.current,Math.max(0,prompts.length-1));if(old!==prompts[data.current])shuffleEncounter={prompt:prompts[data.current],kept:false};resetDeck();shuffleTrail=shuffleTrail.filter(p=>prompts.includes(p));if(!shuffleTrail.length||!shuffleTrail.includes(prompts[data.current]))resetShuffleTrail();else trailPosition=shuffleTrail.lastIndexOf(prompts[data.current]);save();promptView();renderLibrary();favoriteOrder=favoriteOrder.filter(p=>data.favorites.includes(p));for(const p of data.favorites)if(!favoriteOrder.includes(p))favoriteOrder.push(p);renderFavorites()}
 async function syncPrompts(){if(!accessToken||googleBusy||changeBusy)return;googleBusy=true;$('googleSync').disabled=true;try{const {prompts,favorites}=await readSheet();showPrompts(prompts,favorites);lastSync=Date.now();googleStatus('Google connected · '+prompts.length+' prompts synced.');msg('Prompt library refreshed from Google Sheets.')}catch(e){googleStatus('Sync error: '+e.message);msg('Sync failed: '+e.message)}finally{googleBusy=false;$('googleSync').disabled=false}}
 async function changePrompts(action,items){if(!accessToken||changeBusy)return false;changeBusy=true;try{const {name,prompts,favorites}=await readSheet();let next;let nextFavorites=new Set(favorites);
  if(action==='add')next=uniquePrompts([...prompts,...items]);
@@ -207,7 +250,7 @@ async function flushAnswerHistory(){
  finally{indexBusy=false}
 }
 async function openPastAnswers(promptText){
- const overlay=$('pastAnswersOverlay'),list=$('pastAnswersList');$('pastAnswersPrompt').textContent=promptText;list.replaceChildren();
+ const overlay=$('pastAnswersOverlay'),list=$('pastAnswersList');$('pastAnswersPrompt').textContent=promptText;$('pastAnswersActions').replaceChildren(answerNowButton(promptText));list.replaceChildren();
  const notice=document.createElement('p');notice.className='note';notice.textContent='Loading earlier answers…';list.append(notice);overlay.classList.remove('hidden');
  if(!accessToken){notice.textContent='Connect Google in Settings to see earlier answers.';return}
  try{
@@ -216,7 +259,7 @@ async function openPastAnswers(promptText){
    for(const row of matches){const card=document.createElement('article');card.className='entry';const time=document.createElement('strong');const date=new Date(row[1]);time.textContent=Number.isNaN(date.getTime())?'Saved entry':date.toLocaleString(undefined,{year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'});const body=document.createElement('p');body.className='past-answer-text';body.textContent=row[3]||'(No written response)';card.append(time,body);list.append(card)}
  }catch(e){list.replaceChildren();notice.textContent='Could not load answers: '+e.message;list.append(notice)}
 }
-// Read-only "On This Day" uses the same private future-only answer index.
+// "On This Day" browsing uses the same private future-only answer index.
 function calendarShift(date,months,days=0){const d=new Date(date.getFullYear(),date.getMonth(),date.getDate());if(months){const day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+months);d.setDate(Math.min(day,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));}if(days)d.setDate(d.getDate()+days);return d;}
 function localDay(date){return date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0')}
 async function renderMemories(){
@@ -225,7 +268,7 @@ async function renderMemories(){
  const loading=document.createElement('p');loading.className='note';loading.textContent='Looking through your saved entries…';box.append(loading);
  try{
   const rows=await readIndexRows();if($('memories').classList.contains('hidden'))return;
-  const today=new Date();const groups=[['A week ago',calendarShift(today,0,-7)],['Six months ago',calendarShift(today,-6)],['A year ago',calendarShift(today,-12)]];
+  const today=new Date();const groups=[['A week ago',calendarShift(today,0,-7)],['One month ago',calendarShift(today,-1)],['Six months ago',calendarShift(today,-6)],['A year ago',calendarShift(today,-12)]];
   box.replaceChildren();
   for(const [label,date] of groups){
    const section=document.createElement('section');section.className='memory-group';
@@ -233,7 +276,7 @@ async function renderMemories(){
    const dateLabel=document.createElement('p');dateLabel.className='note';dateLabel.textContent=date.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'});section.append(dateLabel);
    const matches=rows.filter(r=>{const d=new Date(r[1]);return !Number.isNaN(d.getTime())&&localDay(d)===localDay(date)});
    if(!matches.length){const empty=document.createElement('p');empty.className='note';empty.textContent='No indexed entries from this date yet.';section.append(empty);}
-   else for(const r of matches){const card=document.createElement('article');card.className='entry';const prompt=document.createElement('strong');prompt.textContent=r[2]||'Untitled prompt';const answer=document.createElement('p');answer.className='past-answer-text';answer.textContent=r[3]||'(No written response)';card.append(prompt,answer);section.append(card);}
+   else for(const r of matches){const card=document.createElement('article');card.className='entry';const prompt=document.createElement('strong');prompt.textContent=r[2]||'Untitled prompt';const answer=document.createElement('p');answer.className='past-answer-text';answer.textContent=r[3]||'(No written response)';card.append(prompt,answer);if(r[2])card.append(answerNowButton(r[2]));section.append(card);}
    box.append(section);
   }
  }catch(e){box.replaceChildren();const error=document.createElement('p');error.className='note';error.textContent='Could not load memories: '+e.message;box.append(error);}
@@ -243,7 +286,7 @@ $('pastAnswersOverlay').addEventListener('click',e=>{if(e.target===$('pastAnswer
 $('indexRetry').addEventListener('click',async()=>{const ok=await flushAnswerHistory();msg(ok?'Answer history is up to date.':'Answer history is still waiting to sync.')});
 updateIndexStatus();
 
-$('deleteAll').addEventListener('click',()=>{if(!confirm('Clear local prompts, drafts, and unconfirmed saves on this device? Saved Google files will not be affected.'))return;if(!confirm('Are you sure? Local drafts and unconfirmed saves cannot be recovered after clearing.'))return;data=fresh();save();promptView();renderSession();tab('session');msg('Local journal data deleted. Google Sheet and Doc were not changed.')});
-if(!storageOK)msg('Saved journal data could not be loaded. Avoid writing until browser storage is available.');else save();resetShuffleTrail();resetDeck();promptView();renderSession();renderHistory();if(data.session.length||data.history.length)$('welcomeDraft').classList.remove('hidden');
+$('deleteAll').addEventListener('click',()=>{if(!confirm('Clear local prompts, drafts, and unconfirmed saves on this device? Saved Google files will not be affected.'))return;if(!confirm('Are you sure? Local drafts and unconfirmed saves cannot be recovered after clearing.'))return;data=fresh();shuffleEncounter={prompt:data.prompts[data.current],kept:false};resetShuffleTrail();resetDeck();save();promptView();renderSession();tab('session');msg('Local journal data deleted. Google Sheet and Doc were not changed.')});
+if(!storageOK)msg('Saved journal data could not be loaded. Avoid writing until browser storage is available.');else save();shuffleEncounter={prompt:data.prompts[data.current],kept:false};resetShuffleTrail();resetDeck();promptView();renderSession();renderHistory();if(data.session.length||data.history.length)$('welcomeDraft').classList.remove('hidden');
 if('serviceWorker'in navigator&&location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
 })();
