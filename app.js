@@ -78,7 +78,7 @@ writingArea.addEventListener('keydown',e=>{
 $('writingDone').addEventListener('click',closeWriting);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&activeWritingIndex!==null)closeWriting()});
 $('addSessionPrompt').addEventListener('click',()=>{tab('session');$('currentPrompt').scrollIntoView({behavior:'smooth',block:'center'});$('shuffle').focus({preventScroll:true});msg('Shuffle to find another prompt, then tap Keep this prompt.')});
-function renderSession(){const box=$('sessionEntries');box.replaceChildren();$('emptySession').hidden=data.session.length>0;data.session.forEach((e,i)=>{const card=document.createElement('div');card.className='entry';const heading=document.createElement('h3');heading.textContent=e.prompt;card.append(heading);const preview=document.createElement('p');preview.className='note';preview.textContent=e.answer?(e.answer.length>170?e.answer.slice(0,170)+'…':e.answer):'A blank page is waiting for you.';preview.style.whiteSpace='pre-wrap';card.append(preview);const actions=document.createElement('div');actions.className='session-open';const open=document.createElement('button');open.className='open-writing';open.textContent=e.answer?'Continue writing':'Open writing mode';open.addEventListener('click',()=>openWriting(i));const remove=document.createElement('button');remove.className='subtle';remove.textContent='Remove entry';remove.addEventListener('click',()=>{if(e.answer&&!confirm('Remove this entry and its draft writing?'))return;data.session.splice(i,1);save();renderSession()});actions.append(open,remove);if(accessToken&&historyLoaded&&historyCount(e.prompt)>0){card.classList.add('has-past');const past=document.createElement('button');past.className='past-link';past.textContent='✦ View past answers ('+historyCount(e.prompt)+')';past.addEventListener('click',()=>openPastAnswers(e.prompt));actions.append(past)}card.append(actions);box.append(card)})}
+function renderSession(){const box=$('sessionEntries');box.replaceChildren();$('emptySession').hidden=data.session.length>0;data.session.forEach((e,i)=>{const card=document.createElement('div');card.className='entry';const heading=document.createElement('h3');heading.textContent=e.prompt;card.append(heading);const preview=document.createElement('p');preview.className='note';preview.textContent=e.answer?(e.answer.length>170?e.answer.slice(0,170)+'…':e.answer):'A blank page is waiting for you.';preview.style.whiteSpace='pre-wrap';card.append(preview);const actions=document.createElement('div');actions.className='session-open';const open=document.createElement('button');open.className='open-writing';open.textContent=e.answer?'Continue writing':'Open writing mode';open.addEventListener('click',()=>openWriting(i));const remove=document.createElement('button');remove.className='subtle';remove.textContent='Remove entry';remove.addEventListener('click',()=>{if(e.answer&&!confirm('Remove this entry and its draft writing?'))return;data.session.splice(i,1);save();renderSession()});actions.append(open,remove);card.append(actions);box.append(card)})}
 
 function renderHistory(){const box=$('historyEntries');box.replaceChildren();$('pendingGroup').classList.toggle('hidden',!data.history.length);if(!data.history.length)return;data.history.forEach((s,i)=>{const card=document.createElement('div');card.className='entry';const head=document.createElement('div');head.className='history-head';const title=document.createElement('strong');const date=new Date(s.created);title.textContent=(Number.isNaN(date.getTime())?'Saved session':date.toLocaleString(undefined,{year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'}))+' · '+s.entries.length+' prompt'+(s.entries.length===1?'':'s');const toggle=document.createElement('button');toggle.textContent='View / edit';toggle.setAttribute('aria-expanded','false');const body=document.createElement('div');body.className='history-items hidden';toggle.addEventListener('click',()=>{const open=body.classList.toggle('hidden')===false;toggle.textContent=open?'Close':'View / edit';toggle.setAttribute('aria-expanded',String(open))});s.entries.forEach(e=>body.append(entryUI(e,null)));const del=document.createElement('button');del.className='subtle';del.textContent='Delete saved session';del.addEventListener('click',()=>{if(confirm('Delete this saved session and its writing?')){data.history.splice(i,1);save();renderHistory()}});body.append(del);const upload=document.createElement('button');upload.textContent='Retry Google save';upload.addEventListener('click',async()=>{upload.disabled=true;try{await appendSession(s);queueAnswerHistory(s);await flushAnswerHistory();data.history=data.history.filter(x=>x.id!==s.id);save();renderHistory();msg('Saved to Google Doc.')}catch(e){msg('Save not confirmed: '+e.message+'. Check the Doc before retrying.')}finally{upload.disabled=false}});body.append(upload);head.append(title,toggle);card.append(head,body);box.append(card)});}
 let favoriteOrder=[];
@@ -144,7 +144,89 @@ $('keep').addEventListener('click',()=>{if(data.prompts.length)startNewAnswer(da
 // Free writes use the same drafts, session saving, and dated answer history.
 // The heading is stored with the entry, without adding a library prompt.
 $('freeWrite').addEventListener('click',()=>startNewAnswer('Free write'));
-$('saveSession').addEventListener('click',async()=>{if(!data.session.length){msg('Start an entry before saving.');return}if(!accessToken){msg('Connect Google before saving to your master journal. Your draft is still on this device.');tab('settings');return}const button=$('saveSession');button.disabled=true;const session={id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),created:new Date().toISOString(),entries:data.session.map(e=>({...e}))};data.history.unshift(session);save();try{await appendSession(session);queueAnswerHistory(session);const historySynced=await flushAnswerHistory();data.history=data.history.filter(x=>x.id!==session.id);data.session=[];save();renderSession();renderHistory();msg(historySynced?'Saved to your Google Doc and answer history!':'Saved to your Google Doc. Answer history is waiting to sync; retry in Settings.');}catch(e){data.session=[];save();renderSession();renderHistory();tab('settings');msg('Google save not confirmed: '+e.message+'. Your writing is saved under Unconfirmed saves in Settings. Check the Doc before retrying.')}finally{button.disabled=false}});
+// Review history only after finishing the whole session and choosing Save.
+let saveBusy=false,committingSave=false,pendingSaveSession=null,pendingReviewGroups=[];
+function setSaveBusy(busy){saveBusy=busy;$('saveSession').disabled=busy;}
+function resetSaveReview(){
+ $('saveReviewList').replaceChildren();
+ $('saveReviewShow').hidden=true;$('saveReviewSkip').hidden=true;$('saveReviewConfirm').hidden=true;
+ for(const id of ['saveReviewShow','saveReviewSkip','saveReviewConfirm','saveReviewBack'])$(id).disabled=false;
+ $('saveReviewSkip').textContent='No, save now';
+}
+function cancelSaveReview(){
+ if(committingSave)return;
+ pendingSaveSession=null;pendingReviewGroups=[];resetSaveReview();
+ if($('saveReview').open)$('saveReview').close();setSaveBusy(false);
+}
+function groupSessionAnswers(session,rows){
+ const prompts=new Map();for(const entry of session.entries){const key=normalizePrompt(entry.prompt);if(key&&!prompts.has(key))prompts.set(key,entry.prompt);}
+ const groups=[];
+ for(const [key,prompt] of prompts){
+  const matches=rows.filter(row=>normalizePrompt(row[2])===key).sort((a,b)=>String(b[1]).localeCompare(String(a[1])));
+  if(matches.length)groups.push({prompt,matches});
+ }
+ return groups;
+}
+$('saveReviewBack').addEventListener('click',cancelSaveReview);
+$('saveReview').addEventListener('cancel',e=>{e.preventDefault();cancelSaveReview()});
+$('saveReviewShow').addEventListener('click',()=>{
+ if(!pendingSaveSession||committingSave)return;
+ const list=$('saveReviewList');list.replaceChildren();
+ for(const {prompt,matches} of pendingReviewGroups){
+  const group=document.createElement('section');group.className='review-group';
+  const heading=document.createElement('h3');heading.textContent=prompt;group.append(heading);
+  for(const row of matches){
+   const card=document.createElement('article');card.className='entry';
+   const time=document.createElement('strong'),date=new Date(row[1]);
+   time.textContent=Number.isNaN(date.getTime())?'Saved entry':date.toLocaleString(undefined,{year:'numeric',month:'long',day:'numeric',hour:'numeric',minute:'2-digit'});
+   const answer=document.createElement('p');answer.className='past-answer-text';answer.textContent=row[3]||'(No written response)';card.append(time,answer);group.append(card);
+  }
+  list.append(group);
+ }
+ $('saveReviewMessage').textContent='Here are your past answers. Save your session whenever you’re ready.';
+ $('saveReviewShow').hidden=true;$('saveReviewSkip').hidden=true;$('saveReviewConfirm').hidden=false;
+ $('saveReviewConfirm').focus({preventScroll:true});
+});
+async function commitPendingSession(){
+ if(!pendingSaveSession||committingSave)return;
+ const session=pendingSaveSession;committingSave=true;
+ $('saveReviewMessage').textContent='Saving your session…';
+ for(const id of ['saveReviewShow','saveReviewSkip','saveReviewConfirm','saveReviewBack'])$(id).disabled=true;
+ data.history.unshift(session);save();
+ try{
+  await appendSession(session);queueAnswerHistory(session);const historySynced=await flushAnswerHistory();
+  data.history=data.history.filter(x=>x.id!==session.id);data.session=[];save();renderSession();renderHistory();
+  msg(historySynced?'Saved to your Google Doc and answer history!':'Saved to your Google Doc. Answer history is waiting to sync; retry in Settings.');
+ }catch(e){
+  data.session=[];save();renderSession();renderHistory();tab('settings');
+  msg('Google save not confirmed: '+e.message+'. Your writing is saved under Unconfirmed saves in Settings. Check the Doc before retrying.');
+ }finally{
+  pendingSaveSession=null;pendingReviewGroups=[];committingSave=false;
+  if($('saveReview').open)$('saveReview').close();resetSaveReview();setSaveBusy(false);
+ }
+}
+$('saveReviewSkip').addEventListener('click',commitPendingSession);
+$('saveReviewConfirm').addEventListener('click',commitPendingSession);
+$('saveSession').addEventListener('click',async()=>{
+ if(saveBusy)return;
+ if(!data.session.length){msg('Start an entry before saving.');return;}
+ if(!accessToken){msg('Connect Google before saving to your master journal. Your draft is still on this device.');tab('settings');return;}
+ setSaveBusy(true);resetSaveReview();pendingReviewGroups=[];
+ const session={id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),created:new Date().toISOString(),entries:data.session.map(e=>({...e}))};
+ pendingSaveSession=session;$('saveReviewMessage').textContent='Checking for past answers…';$('saveReview').showModal();
+ try{
+  const rows=await readIndexRows();if(pendingSaveSession!==session||committingSave)return;
+  pendingReviewGroups=groupSessionAnswers(session,rows);
+  if(!pendingReviewGroups.length){await commitPendingSession();return;}
+  $('saveReviewMessage').textContent='Would you like to see past answers to these questions?';
+  $('saveReviewShow').hidden=false;$('saveReviewSkip').hidden=false;$('saveReviewShow').focus({preventScroll:true});
+ }catch(e){
+  if(pendingSaveSession!==session||committingSave)return;
+  if(!accessToken){cancelSaveReview();msg('Reconnect Google before saving. Your draft is still on this device.');return;}
+  $('saveReviewMessage').textContent='Past answers couldn’t load. You can still save this session without reviewing them, or go back to writing.';
+  $('saveReviewSkip').textContent='Save without reviewing';$('saveReviewSkip').hidden=false;$('saveReviewSkip').focus({preventScroll:true});
+ }
+});
 $('clearSession').addEventListener('click',()=>{if(data.session.length&&!confirm('Clear this session and all its responses?'))return;data.session=[];save();renderSession();msg('Session cleared.')});
 $('promptForm').addEventListener('submit',e=>{e.preventDefault();const lines=$('newPrompts').value.split('\n').map(s=>s.trim()).filter(Boolean);if(!lines.length){msg('Enter at least one prompt.');return}if(lines.length>1000){msg('Please add at most 1,000 prompts at once.');return}if(accessToken){changePrompts('add',lines).then(ok=>{if(ok)$('newPrompts').value=''})}else{msg('Connect Google before adding prompts to the shared library.');tab('settings')}});
 for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>tab(btn.dataset.tab));
@@ -273,24 +355,43 @@ async function openPastAnswers(promptText){
 // "On This Day" browsing uses the same private future-only answer index.
 function calendarShift(date,months,days=0){const d=new Date(date.getFullYear(),date.getMonth(),date.getDate());if(months){const day=d.getDate();d.setDate(1);d.setMonth(d.getMonth()+months);d.setDate(Math.min(day,new Date(d.getFullYear(),d.getMonth()+1,0).getDate()));}if(days)d.setDate(d.getDate()+days);return d;}
 function localDay(date){return date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0')}
-async function renderMemories(){
+let memoryGroups=[];let memoriesRequest=0;
+function resetMemoryView(message){
+ const box=$('memoryEntries'),button=$('toggleMemories');
+ box.replaceChildren();box.classList.add('hidden');
+ button.hidden=true;button.textContent='View past entries';button.setAttribute('aria-expanded','false');
+ $('memoryStatus').textContent=message;
+}
+function fillMemoryEntries(){
  const box=$('memoryEntries');box.replaceChildren();
- if(!accessToken){box.textContent='Connect Google in Settings to view memories.';return;}
- const loading=document.createElement('p');loading.className='note';loading.textContent='Looking through your saved entries…';box.append(loading);
+ for(const {label,date,matches} of memoryGroups){
+  const section=document.createElement('section');section.className='memory-group';
+  const heading=document.createElement('h3');heading.textContent=label;section.append(heading);
+  const dateLabel=document.createElement('p');dateLabel.className='note';dateLabel.textContent=date.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'});section.append(dateLabel);
+  for(const r of matches){const card=document.createElement('article');card.className='entry';const prompt=document.createElement('strong');prompt.textContent=r[2]||'Untitled prompt';const answer=document.createElement('p');answer.className='past-answer-text';answer.textContent=r[3]||'(No written response)';card.append(prompt,answer);if(r[2])card.append(answerNowButton(r[2]));section.append(card);}
+  box.append(section);
+ }
+}
+$('toggleMemories').addEventListener('click',()=>{
+ if(!memoryGroups.length)return;
+ const button=$('toggleMemories'),box=$('memoryEntries');
+ const expand=button.getAttribute('aria-expanded')!=='true';
+ if(expand)fillMemoryEntries();else box.replaceChildren();
+ box.classList.toggle('hidden',!expand);button.setAttribute('aria-expanded',String(expand));
+ button.textContent=expand?'Hide past entries':'View past entries';
+});
+async function renderMemories(){
+ const request=++memoriesRequest;memoryGroups=[];
+ resetMemoryView(accessToken?'Looking through your saved entries…':'Connect Google in Settings to view memories.');
+ if(!accessToken)return;
  try{
-  const rows=await readIndexRows();if($('memories').classList.contains('hidden'))return;
+  const rows=await readIndexRows();if(request!==memoriesRequest||$('memories').classList.contains('hidden'))return;
   const today=new Date();const groups=[['A week ago',calendarShift(today,0,-7)],['One month ago',calendarShift(today,-1)],['Six months ago',calendarShift(today,-6)],['A year ago',calendarShift(today,-12)]];
-  box.replaceChildren();
-  for(const [label,date] of groups){
-   const section=document.createElement('section');section.className='memory-group';
-   const heading=document.createElement('h3');heading.textContent=label;section.append(heading);
-   const dateLabel=document.createElement('p');dateLabel.className='note';dateLabel.textContent=date.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'});section.append(dateLabel);
-   const matches=rows.filter(r=>{const d=new Date(r[1]);return !Number.isNaN(d.getTime())&&localDay(d)===localDay(date)});
-   if(!matches.length){const empty=document.createElement('p');empty.className='note';empty.textContent='No indexed entries from this date yet.';section.append(empty);}
-   else for(const r of matches){const card=document.createElement('article');card.className='entry';const prompt=document.createElement('strong');prompt.textContent=r[2]||'Untitled prompt';const answer=document.createElement('p');answer.className='past-answer-text';answer.textContent=r[3]||'(No written response)';card.append(prompt,answer);if(r[2])card.append(answerNowButton(r[2]));section.append(card);}
-   box.append(section);
-  }
- }catch(e){box.replaceChildren();const error=document.createElement('p');error.className='note';error.textContent='Could not load memories: '+e.message;box.append(error);}
+  memoryGroups=groups.map(([label,date])=>({label,date,matches:rows.filter(r=>{const d=new Date(r[1]);return !Number.isNaN(d.getTime())&&localDay(d)===localDay(date)})})).filter(group=>group.matches.length>0);
+  const total=memoryGroups.reduce((sum,group)=>sum+group.matches.length,0);
+  $('memoryStatus').textContent=total?'You have '+total+' past '+(total===1?'entry':'entries')+' to revisit.':'No past entries to revisit for these dates yet.';
+  $('toggleMemories').hidden=total===0;
+ }catch(e){if(request!==memoriesRequest||$('memories').classList.contains('hidden'))return;memoryGroups=[];resetMemoryView('Could not load memories: '+e.message);}
 }
 $('pastAnswersClose').addEventListener('click',()=>$('pastAnswersOverlay').classList.add('hidden'));
 $('pastAnswersOverlay').addEventListener('click',e=>{if(e.target===$('pastAnswersOverlay'))$('pastAnswersOverlay').classList.add('hidden')});
